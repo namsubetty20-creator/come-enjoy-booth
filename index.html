@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -23,13 +24,26 @@ select, button {
   font-size: 17px;
   border-radius: 8px;
 }
-#reader { width: 100%; margin: 16px auto; }
+button {
+  border: none;
+  background: #2457c5;
+  color: white;
+  font-weight: bold;
+}
+button:disabled {
+  background: #999;
+}
+#reader {
+  width: 100%;
+  margin: 16px auto;
+}
 #message {
   padding: 18px;
   background: white;
   border-radius: 12px;
   font-size: 18px;
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 </style>
 </head>
@@ -43,8 +57,9 @@ select, button {
   <option value="claw">인형뽑기</option>
 </select>
 
+<button id="startButton" type="button">카메라 시작하기</button>
 <div id="reader"></div>
-<div id="message">부스를 선택하고 카메라를 준비해 주세요.</div>
+<div id="message">부스를 선택한 뒤 카메라 시작하기를 눌러 주세요.</div>
 
 <script>
 const API = "https://script.google.com/macros/s/AKfycbw9SeKHfytZKp9HHuowERJlcC8k6aMRwAL9-YO_dKb8WLuWgwezJ_hGxbRa5A4xPCFu/exec";
@@ -55,28 +70,141 @@ const boothNames = {
   claw: "인형뽑기"
 };
 
+const boothSelect = document.getElementById("booth");
+const boothTitle = document.getElementById("boothTitle");
+const startButton = document.getElementById("startButton");
+const message = document.getElementById("message");
+const readerElement = document.getElementById("reader");
+
 const params = new URLSearchParams(location.search);
 const initialBooth = params.get("booth");
-
 if (initialBooth && boothNames[initialBooth]) {
-  document.getElementById("booth").value = initialBooth;
+  boothSelect.value = initialBooth;
 }
 
-let scanner;
+let scanner = null;
+let scannerRunning = false;
 let processing = false;
 
 function showMessage(text, color = "white") {
-  const el = document.getElementById("message");
-  el.textContent = text;
-  el.style.background = color;
+  message.textContent = text;
+  message.style.background = color;
 }
 
+boothTitle.textContent = boothNames[boothSelect.value] + " 이용 확인";
+
+boothSelect.addEventListener("change", function() {
+  boothTitle.textContent = boothNames[this.value] + " 이용 확인";
+});
+
 function scanToken(token) {
-  const booth = document.getElementById("booth").value;
+  const booth = boothSelect.value;
   const callback = "boothScanCallback";
   let finished = false;
+
+  showMessage("QR 확인 중입니다. 잠시 기다려 주세요.");
+
   const script = document.createElement("script");
   const url = new URL(API);
 
-  function finish(message, color = "#fff0d6") {
-    if (finished) return
+  function finish(text, success) {
+    if (finished) return;
+    finished = true;
+
+    showMessage(text, success ? "#d9f5df" : "#fff0d6");
+
+    setTimeout(function() {
+      processing = false;
+      if (scanner && scannerRunning) {
+        showMessage("다음 참가자의 QR 코드를 스캔해 주세요.");
+        scanner.resume();
+      }
+      delete window[callback];
+      script.remove();
+    }, 2500);
+  }
+
+  window[callback] = function(result) {
+    finish(
+      result && result.message
+        ? result.message
+        : "확인 결과를 받지 못했습니다.",
+      !!(result && result.success)
+    );
+  };
+
+  url.searchParams.set("action", "scan");
+  url.searchParams.set("token", token);
+  url.searchParams.set("booth", booth);
+  url.searchParams.set("callback", callback);
+
+  script.src = url.toString();
+
+  script.onerror = function() {
+    finish("서버에 연결하지 못했습니다. 인터넷 연결을 확인해 주세요.", false);
+  };
+
+  document.body.appendChild(script);
+
+  setTimeout(function() {
+    if (!finished) {
+      finish("서버 응답이 없습니다. 인터넷 연결과 Apps Script 배포를 확인해 주세요.", false);
+    }
+  }, 12000);
+}
+
+function onScanSuccess(decodedText) {
+  if (processing) return;
+
+  processing = true;
+
+  if (scanner && scannerRunning) {
+    scanner.pause(true);
+  }
+
+  scanToken(decodedText.trim());
+}
+
+async function startScanner() {
+  if (scannerRunning) return;
+
+  if (typeof Html5Qrcode === "undefined") {
+    showMessage("QR 스캔 기능을 불러오지 못했습니다. 인터넷 연결을 확인해 주세요.", "#fff0d6");
+    return;
+  }
+
+  startButton.disabled = true;
+  showMessage("카메라를 여는 중입니다...");
+
+  try {
+    scanner = new Html5Qrcode("reader");
+
+    await scanner.start(
+      { facingMode: "environment" },
+      {
+        fps: 10,
+        qrbox: { width: 230, height: 230 }
+      },
+      onScanSuccess
+    );
+
+    scannerRunning = true;
+    showMessage("참가자의 QR 코드를 스캔해 주세요.", "#d9f5df");
+  } catch (error) {
+    scannerRunning = false;
+
+    const detail = error && error.message ? error.message : String(error || "");
+    showMessage(
+      "카메라를 시작하지 못했습니다. 사이트의 카메라 권한을 확인해 주세요." +
+      (detail ? "\n오류: " + detail : ""),
+      "#fff0d6"
+    );
+  } finally {
+    startButton.disabled = false;
+  }
+}
+
+startButton.addEventListener("click", startScanner);
+</script>
+</body>
+</html>
