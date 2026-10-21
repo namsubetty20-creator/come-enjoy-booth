@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>COME & ENJOY 부스 확인</title>
+<script src="https://unpkg.com/html5-qrcode"></script>
+<style>
+body {
+  font-family: Arial, sans-serif;
+  max-width: 520px;
+  margin: 20px auto;
+  padding: 16px;
+  text-align: center;
+  background: #f7f7fb;
+  color: #222;
+}
+select, button {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 13px;
+  margin: 8px 0;
+  font-size: 17px;
+  border-radius: 8px;
+}
+#reader { width: 100%; margin: 16px auto; }
+#message {
+  padding: 18px;
+  background: white;
+  border-radius: 12px;
+  font-size: 18px;
+  line-height: 1.5;
+}
+</style>
+</head>
+<body>
+<h2>COME & ENJOY</h2>
+<h3 id="boothTitle">부스 이용 확인</h3>
+
+<select id="booth">
+  <option value="welcome">웰컴티</option>
+  <option value="photo">인생네컷</option>
+  <option value="claw">인형뽑기</option>
+</select>
+
+<div id="reader"></div>
+<div id="message">부스를 선택하고 카메라를 준비해 주세요.</div>
+
+<script>
+const API = "https://script.google.com/macros/s/AKfycbw9SeKHfytZKp9HHuowERJlcC8k6aMRwAL9-YO_dKb8WLuWgwezJ_hGxbRa5A4xPCFu/exec";
+
+const boothNames = {
+  welcome: "웰컴티",
+  photo: "인생네컷",
+  claw: "인형뽑기"
+};
+
+const params = new URLSearchParams(location.search);
+const initialBooth = params.get("booth");
+
+if (initialBooth && boothNames[initialBooth]) {
+  document.getElementById("booth").value = initialBooth;
+}
+
+let scanner;
+let processing = false;
+
+function showMessage(text, color = "white") {
+  const el = document.getElementById("message");
+  el.textContent = text;
+  el.style.background = color;
+}
+
+function scanToken(token) {
+  const booth = document.getElementById("booth").value;
+  const callback = "boothScanCallback";
+  let finished = false;
+  const script = document.createElement("script");
+  const url = new URL(API);
+
+  function finish(message, color = "#fff0d6") {
+    if (finished) return
